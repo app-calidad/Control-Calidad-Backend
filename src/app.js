@@ -13,6 +13,7 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization', 'x-access-token'],
 }
 app.use(cors(corsOptions))
+app.options('*', cors(corsOptions)) // Manejo explícito de preflight
 app.use(express.json({ limit: '1mb' }))
 app.use(express.urlencoded({ extended: true }))
 

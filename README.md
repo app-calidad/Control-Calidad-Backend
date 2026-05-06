@@ -141,7 +141,7 @@ On startup you should see:
 
 ## API Reference
 
-Base URL: `http://localhost:4000/api`
+Base URL: `https://control-calidad-backend-1.onrender.com/api`
 
 ### Health
 
@@ -643,22 +643,22 @@ GET /api/lotes/trazabilidad/fecha/2026-05-05
 
 ```bash
 # 1. Login
-curl -X POST http://localhost:4000/api/auth/login \
+curl -X POST https://control-calidad-backend-1.onrender.com/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"Emiro","password":"EmiroAPP2026cc"}'
 
 # 2. Create user (replace <TOKEN>)
-curl -X POST http://localhost:4000/api/users \
+curl -X POST https://control-calidad-backend-1.onrender.com/api/users \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <TOKEN>" \
   -d '{"username":"alice","email":"alice@example.com"}'
 
 # 3. List users
-curl http://localhost:4000/api/users \
+curl https://control-calidad-backend-1.onrender.com/api/users \
   -H "Authorization: Bearer <TOKEN>"
 
 # 4. Export users to Excel
-curl -L http://localhost:4000/api/users/export \
+curl -L https://control-calidad-backend-1.onrender.com/api/users/export \
   -H "Authorization: Bearer <TOKEN>" \
   -o users.xlsx
 ```
