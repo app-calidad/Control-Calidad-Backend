@@ -20,16 +20,19 @@ src/
 │   └── env.js             # dotenv + env validation
 ├── controllers/
 │   ├── authController.js  # login handler
-│   └── userController.js  # users CRUD + export
+│   ├── userController.js  # users CRUD + export
+│   └── porcionadoController.js # porcionado CRUD + opciones
 ├── middlewares/
 │   ├── authMiddleware.js  # Bearer token guard
 │   └── errorHandler.js    # 404 + centralized errors
 ├── routes/
 │   ├── authRoutes.js
+│   ├── porcionadoRoutes.js
 │   ├── userRoutes.js
 │   └── index.js
 ├── services/
 │   ├── authService.js     # admin bootstrap + login
+│   ├── porcionadoService.js # SQL porcionado + rangos + lote
 │   ├── userService.js     # SQL access + table init
 │   └── excelService.js    # workbook builder
 ├── utils/
@@ -68,7 +71,7 @@ cp .env.example .env
 | `TOKEN_TTL_MS`    | no       | `86400000` (24 h)       | Session token lifetime in milliseconds       |
 | `NODE_ENV`        | no       | `development`           | Node environment                             |
 
-The `users` table is created automatically on startup if it does not exist. The Express app enables CORS for every origin listed in `ALLOWED_ORIGINS` (defaults to `http://localhost:3000`).
+The `users` and `registros_porcionado` tables are created automatically on startup if they do not exist. The Express app enables CORS for every origin listed in `ALLOWED_ORIGINS` (defaults to `http://localhost:3000`).
 
 ### 3. Run the server
 
@@ -211,6 +214,147 @@ Response headers:
 ```
 Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 Content-Disposition: attachment; filename="users-YYYY-MM-DD.xlsx"
+```
+
+### Formato de Porcionado (all require `Authorization: Bearer <token>`)
+
+#### `GET /api/porcionado/opciones`
+
+Devuelve las opciones de los selectores (solo selección, sin escribir) para pesos, longitudes, amplitudes, grosores, brix, cuartos y responsables.
+
+Response `200`:
+
+```json
+{
+  "pesos": [32, 32.5, 33, 33.5, 34],
+  "longitudes": [6, 6.25, 6.5, 6.75, 7],
+  "amplitudes": [3.5, 3.6, 3.7, 3.8, 3.9, 4],
+  "grosores": [2, 2.1, 2.2, 2.3, 2.4, 2.5],
+  "brix": [28, 28.5, 29, 29.5, 30, 30.5, 31, 31.5, 32],
+  "cuartos": [1, 2, 3, 4, 5, 6],
+  "responsables": ["EMIRO CEBALLOS", "SAMIRA SARMIENTO"]
+}
+```
+
+#### `POST /api/porcionado`
+
+Request:
+
+```json
+{
+  "fecha": "2026-05-05",
+  "hora_inicio": "09:50",
+  "hora_fin": "11:00",
+  "cuarto": 3,
+  "peso_1": 35,
+  "peso_2": 38,
+  "peso_3": 40,
+  "peso_4": 33,
+  "peso_5": 42,
+  "longitud_1": 7,
+  "longitud_2": 7.5,
+  "longitud_3": 8,
+  "longitud_4": 6.5,
+  "longitud_5": 7,
+  "amplitud_1": 3.6,
+  "amplitud_2": 3.8,
+  "amplitud_3": 3.7,
+  "amplitud_4": 3.9,
+  "amplitud_5": 3.6,
+  "grosor_1": 2.1,
+  "grosor_2": 2.3,
+  "grosor_3": 2.2,
+  "grosor_4": 2.4,
+  "grosor_5": 2.1,
+  "brix_1": 29,
+  "brix_2": 30.5,
+  "brix_3": 31,
+  "brix_4": 28.5,
+  "brix_5": 30,
+  "realizado_por": "EMIRO CEBALLOS",
+  "verificado_por": "SAMIRA SARMIENTO",
+  "observaciones": ""
+}
+```
+
+Response `201`:
+
+```json
+{
+  "id": 1,
+  "fecha": "2026-05-05T00:00:00.000Z",
+  "lote": "19-2026",
+  "hora_inicio": "09:50:00",
+  "hora_fin": "11:00:00",
+  "cuarto": 3,
+  "peso_1": "35.00",
+  "peso_2": "38.00",
+  "peso_3": "40.00",
+  "peso_4": "33.00",
+  "peso_5": "42.00",
+  "longitud_1": "7.00",
+  "longitud_2": "7.50",
+  "longitud_3": "8.00",
+  "longitud_4": "6.50",
+  "longitud_5": "7.00",
+  "amplitud_1": "3.60",
+  "amplitud_2": "3.80",
+  "amplitud_3": "3.70",
+  "amplitud_4": "3.90",
+  "amplitud_5": "3.60",
+  "grosor_1": "2.10",
+  "grosor_2": "2.30",
+  "grosor_3": "2.20",
+  "grosor_4": "2.40",
+  "grosor_5": "2.10",
+  "brix_1": "29.00",
+  "brix_2": "30.50",
+  "brix_3": "31.00",
+  "brix_4": "28.50",
+  "brix_5": "30.00",
+  "estado": "CUMPLE",
+  "realizado_por": "EMIRO CEBALLOS",
+  "verificado_por": "SAMIRA SARMIENTO",
+  "observaciones": "",
+  "created_at": "2026-05-06T01:10:20.000Z"
+}
+```
+
+#### `GET /api/porcionado?fecha=YYYY-MM-DD`
+
+Response `200`:
+
+```json
+[
+  {
+    "id": 1,
+    "fecha": "2026-05-05T00:00:00.000Z",
+    "lote": "19-2026",
+    "estado": "CUMPLE",
+    "realizado_por": "EMIRO CEBALLOS",
+    "verificado_por": "SAMIRA SARMIENTO"
+  }
+]
+```
+
+#### `GET /api/porcionado/:id`
+
+Response `200` / `404`.
+
+#### `DELETE /api/porcionado/:id`
+
+Response `200`:
+
+```json
+{ "message": "Registro eliminado" }
+```
+
+#### `DELETE /api/porcionado/all`
+
+Response `200`:
+
+```json
+{ "message": "Todos los registros eliminados" }
 ```
 
 ## Example Flow (curl)

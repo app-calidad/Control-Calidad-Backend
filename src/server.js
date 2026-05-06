@@ -3,12 +3,14 @@ import { env } from './config/env.js'
 import { connectToDB, pool } from './config/db.js'
 import { ensureUsersTable } from './services/userService.js'
 import { bootstrapAdmin } from './services/authService.js'
+import { ensurePorcionadoTable } from './services/porcionadoService.js'
 
 const start = async () => {
   try {
     await connectToDB()
     await ensureUsersTable()
     await bootstrapAdmin()
+    await ensurePorcionadoTable()
 
     const server = app.listen(env.port, () => {
       console.log(`🚀 Server running on http://localhost:${env.port}`)
