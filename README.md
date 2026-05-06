@@ -19,31 +19,70 @@ src/
 │   ├── db.js              # pg Pool + connection helper
 │   └── env.js             # dotenv + env validation
 ├── controllers/
-│   ├── authController.js  # login handler
-│   ├── userController.js  # users CRUD + export
-│   └── porcionadoController.js # porcionado CRUD + opciones
+│   ├── authController.js       # login handler
+│   ├── userController.js       # users CRUD + export
+│   ├── porcionadoController.js # porcionado CRUD + opciones
+│   ├── prefreidoController.js  # prefreído/deollier/picking CRUD
+│   └── lotesController.js      # lotes + trazabilidad
 ├── middlewares/
 │   ├── authMiddleware.js  # Bearer token guard
 │   └── errorHandler.js    # 404 + centralized errors
 ├── routes/
 │   ├── authRoutes.js
-│   ├── porcionadoRoutes.js
 │   ├── userRoutes.js
+│   ├── porcionadoRoutes.js
+│   ├── prefreidoRoutes.js
+│   ├── lotesRoutes.js
 │   └── index.js
 ├── services/
-│   ├── authService.js     # admin bootstrap + login
-│   ├── porcionadoService.js # SQL porcionado + rangos + lote
-│   ├── userService.js     # SQL access + table init
-│   └── excelService.js    # workbook builder
+│   ├── authService.js        # admin bootstrap + login
+│   ├── userService.js        # SQL access + table init
+│   ├── excelService.js       # workbook builder
+│   ├── porcionadoService.js  # SQL porcionado + rangos
+│   ├── prefreidoService.js   # SQL prefreído + rangos
+│   └── lotesService.js       # lotes_produccion + trazabilidad
 ├── utils/
 │   ├── ApiError.js        # typed HTTP errors
 │   ├── asyncHandler.js
 │   ├── tokenStore.js      # in-memory sessions
-│   └── validators.js      # input validation helpers
+│   ├── validators.js      # input validation helpers
+│   └── loteUtils.js       # calcularLote / calcularLoteW
 ├── app.js                 # Express app wiring
 └── server.js              # bootstrap + lifecycle
 main.js                    # thin entry that imports src/server.js
+migrations/
+├── 001_initial_schema.sql
+├── 002_prefreido_schema.sql
+├── 003_lotes_relations.sql
+└── 004_users_relations.sql
 ```
+
+## Modelo de datos y relaciones
+
+```
+users
+  id  ◄──────────────────────────────────────────────────────┐
+                                                             │
+lotes_produccion                                             │
+  id          ◄────────────────────────────────────┐        │
+  created_by_id  ─────────────────────────────────────────► users.id
+                                                   │
+  ┌─────────────────────────┐   ┌──────────────────┴──────────────────┐
+  │  registros_porcionado   │   │       registros_prefreido           │
+  │  lote_id ──────────────►│   │  lote_id ──────────────────────────►│
+  │  realizado_por_id ─────────────────────────────────────────────► users.id
+  │  verificado_por_id ────────────────────────────────────────────► users.id
+  └─────────────────────────┘   └─────────────────────────────────────┘
+```
+
+### Regla de negocio para responsables
+
+| Caso | Qué enviar en el POST |
+|---|---|
+| Responsable es usuario del sistema | `realizado_por: "EMIRO CEBALLOS"` **+** `realizado_por_id: 1` |
+| Responsable es "Otro" (campo libre) | `realizado_por: "Nombre personalizado"` (sin `_id`) |
+
+Las columnas `_id` son **nullable**; si no se envían el nombre de texto sigue almacenándose correctamente.
 
 ## Getting Started
 
@@ -71,7 +110,7 @@ cp .env.example .env
 | `TOKEN_TTL_MS`    | no       | `86400000` (24 h)       | Session token lifetime in milliseconds       |
 | `NODE_ENV`        | no       | `development`           | Node environment                             |
 
-The `users` and `registros_porcionado` tables are created automatically on startup if they do not exist. The Express app enables CORS for every origin listed in `ALLOWED_ORIGINS` (defaults to `http://localhost:3000`).
+The `users`, `lotes_produccion`, `registros_porcionado` and `registros_prefreido` tables are created automatically on startup if they do not exist. The Express app enables CORS for every origin listed in `ALLOWED_ORIGINS` (defaults to `http://localhost:3000`).
 
 ### 3. Run the server
 
@@ -272,18 +311,11 @@ Request:
   "brix_4": 28.5,
   "brix_5": 30,
   "realizado_por": "EMIRO CEBALLOS",
+  "realizado_por_id":  1,
   "verificado_por": "SAMIRA SARMIENTO",
-  "observaciones": ""
+  "verificado_por_id": 2,
+  "observaciones":  ""
 }
-```
-
-Response `201`:
-
-```json
-{
-  "id": 1,
-  "fecha": "2026-05-05T00:00:00.000Z",
-  "lote": "19-2026",
   "hora_inicio": "09:50:00",
   "hora_fin": "11:00:00",
   "cuarto": 3,
@@ -357,7 +389,220 @@ Response `200`:
 { "message": "Todos los registros eliminados" }
 ```
 
-## Example Flow (curl)
+### Formato control prefreído, deollier y picking (all require `Authorization: Bearer <token>`)
+
+#### `GET /api/prefreido/opciones`
+
+Devuelve todas las listas de valores para los selectores del formulario.
+
+Response `200`:
+
+```json
+{
+  "temp_freidora":        [150, 150.5, "...", 180],
+  "temp_tajada_freidora": [65, 65.5, "...", 80],
+  "temp_tajada_deollier": [40, 40.5, "...", 60],
+  "color": [
+    "OPTIMO (AMARILLO A DORADO)",
+    "ACEPTABLE (DORADO INTENSO)",
+    "NO CONFORME (MARRON MUY OSCURO)"
+  ],
+  "sabor":   ["DULCE", "AMARGO"],
+  "olor":    ["CARACTERISTICO", "NO CARACTERISTICO"],
+  "forma":   ["ALARGADA", "REDONDA"],
+  "material_extrano_pick": ["AUSENCIA", "PRESENCIA"],
+  "temp_iqf":         [-40, -39.5, "...", -10],
+  "temp_entrada_iqf": [40, 40.5, "...", 80],
+  "temp_salida_iqf":  [-30, -29.5, "...", -2],
+  "brix_iqf":         [29, 29.5, 30, 30.5, 31, 31.5, 32],
+  "conformidad":          ["CONFORME", "NO CONFORME"],
+  "materiales_extranos":  ["AUSENTE", "PRESENTE"],
+  "responsables":         ["EMIRO CEBALLOS", "SAMIRA SARMIENTO"]
+}
+```
+
+#### `POST /api/prefreido`
+
+Request (todos los campos de medición son opcionales; los campos de control son obligatorios):
+
+```json
+{
+  "fecha":        "2026-05-05",
+  "hora_inicio":  "10:00",
+  "hora_fin":     "12:00",
+
+  "temp_freidora_entrada_1": 165, "temp_freidora_entrada_2": 167,
+  "temp_freidora_entrada_3": 163, "temp_freidora_entrada_4": 166,
+  "temp_freidora_entrada_5": 168,
+
+  "temp_freidora_salida_1": 160, "temp_freidora_salida_2": 162,
+  "temp_freidora_salida_3": 159, "temp_freidora_salida_4": 161,
+  "temp_freidora_salida_5": 163,
+
+  "temp_tajada_freidora_1": 72, "temp_tajada_freidora_2": 74,
+  "temp_tajada_freidora_3": 71, "temp_tajada_freidora_4": 73,
+  "temp_tajada_freidora_5": 75,
+
+  "temp_tajada_deollier_1": 50, "temp_tajada_deollier_2": 52,
+  "temp_tajada_deollier_3": 49, "temp_tajada_deollier_4": 51,
+  "temp_tajada_deollier_5": 53,
+
+  "color_1": "OPTIMO (AMARILLO A DORADO)",
+  "color_2": "OPTIMO (AMARILLO A DORADO)",
+  "color_3": "ACEPTABLE (DORADO INTENSO)",
+  "color_4": "OPTIMO (AMARILLO A DORADO)",
+  "color_5": "OPTIMO (AMARILLO A DORADO)",
+
+  "sabor_1": "DULCE", "sabor_2": "DULCE", "sabor_3": "DULCE",
+  "sabor_4": "DULCE", "sabor_5": "DULCE",
+
+  "olor_1": "CARACTERISTICO", "olor_2": "CARACTERISTICO",
+  "olor_3": "CARACTERISTICO", "olor_4": "CARACTERISTICO",
+  "olor_5": "CARACTERISTICO",
+
+  "forma_1": "ALARGADA", "forma_2": "ALARGADA", "forma_3": "REDONDA",
+  "forma_4": "ALARGADA", "forma_5": "ALARGADA",
+
+  "mat_ext_pick_1": "AUSENCIA", "mat_ext_pick_2": "AUSENCIA",
+  "mat_ext_pick_3": "AUSENCIA", "mat_ext_pick_4": "AUSENCIA",
+  "mat_ext_pick_5": "AUSENCIA",
+
+  "temp_iqf_1": -18, "temp_iqf_2": -17, "temp_iqf_3": -18,
+  "temp_iqf_4": -19, "temp_iqf_5": -18,
+
+  "temp_entrada_iqf_1": 55, "temp_entrada_iqf_2": 57, "temp_entrada_iqf_3": 54,
+  "temp_entrada_iqf_4": 56, "temp_entrada_iqf_5": 55,
+
+  "temp_salida_iqf_1": -5, "temp_salida_iqf_2": -6, "temp_salida_iqf_3": -5,
+  "temp_salida_iqf_4": -7, "temp_salida_iqf_5": -6,
+
+  "brix_iqf_1": 30, "brix_iqf_2": 30.5, "brix_iqf_3": 31,
+  "brix_iqf_4": 29.5, "brix_iqf_5": 30,
+
+  "peso_neto_1": 450.0, "peso_neto_2": 452.5, "peso_neto_3": 449.0,
+  "peso_neto_4": 451.0, "peso_neto_5": 450.5,
+
+  "verificacion_loteado": "CONFORME",
+  "sellado_vertical":     "CONFORME",
+  "sellado_horizontal":   "CONFORME",
+  "materiales_extranos":  "AUSENTE",
+
+  "realizado_por":  "EMIRO CEBALLOS",
+  "realizado_por_id":  1,
+  "verificado_por": "SAMIRA SARMIENTO",
+  "verificado_por_id": 2,
+  "observaciones":  ""
+}
+```
+
+Response `201` — devuelve el registro completo con los campos calculados automáticamente:
+
+```json
+{
+  "id": 1,
+  "fecha": "2026-05-05T00:00:00.000Z",
+  "lote": "19-2026",
+  "lote_id": 1,
+  "hora_inicio": "10:00:00",
+  "hora_fin": "12:00:00",
+  "lote_verificado": "W192026",
+  "verificacion_loteado": "CONFORME",
+  "sellado_vertical":     "CONFORME",
+  "sellado_horizontal":   "CONFORME",
+  "materiales_extranos":  "AUSENTE",
+  "estado": "CUMPLE",
+  "realizado_por":  "EMIRO CEBALLOS",
+  "verificado_por": "SAMIRA SARMIENTO",
+  "created_at": "2026-05-05T10:05:00.000Z"
+}
+```
+
+> `lote_verificado` se calcula automáticamente si no se envía (ej. `W192026`).
+> `estado` es `CUMPLE` si todos los valores están en rango, `NO CUMPLE` si alguno sale, `PENDIENTE` si no hay mediciones.
+
+#### `GET /api/prefreido?fecha=YYYY-MM-DD`
+
+Response `200`: array de registros del día.
+
+#### `GET /api/prefreido/:id`
+
+Response `200` / `404`.
+
+#### `DELETE /api/prefreido/:id` · `DELETE /api/prefreido/all`
+
+Response `200`: `{ "message": "Registro eliminado" }` / `{ "message": "Todos los registros eliminados" }`
+
+---
+
+### Lotes de producción y Trazabilidad (all require `Authorization: Bearer <token>`)
+
+> Un **lote** se crea automáticamente la primera vez que se guarda cualquier registro (porcionado o prefreído) con una fecha dada. No hace falta crearlo manualmente.
+
+#### `GET /api/lotes`
+
+Lista todos los lotes registrados.
+
+Response `200`:
+
+```json
+[
+  {
+    "id": 1,
+    "lote":   "19-2026",
+    "lote_w": "W192026",
+    "fecha":  "2026-05-05T00:00:00.000Z",
+    "created_at": "2026-05-05T09:50:00.000Z"
+  }
+]
+```
+
+#### `GET /api/lotes/trazabilidad/:lote`
+
+Devuelve todos los registros de porcionado y prefreído agrupados bajo un lote. Parámetro `:lote` en formato `19-2026`.
+
+Response `200`:
+
+```json
+{
+  "lote_id": 1,
+  "lote":    "19-2026",
+  "lote_w":  "W192026",
+  "fecha":   "2026-05-05T00:00:00.000Z",
+  "porcionados": [
+    {
+      "id": 1,
+      "hora_inicio": "09:50:00",
+      "hora_fin":    "11:00:00",
+      "cuarto": 3,
+      "estado": "CUMPLE",
+      "realizado_por":  "EMIRO CEBALLOS",
+      "verificado_por": "SAMIRA SARMIENTO",
+      "created_at": "2026-05-05T09:55:00.000Z"
+    }
+  ],
+  "prefreidos": [
+    {
+      "id": 1,
+      "hora_inicio": "10:00:00",
+      "hora_fin":    "12:00:00",
+      "estado": "CUMPLE",
+      "realizado_por":  "EMIRO CEBALLOS",
+      "verificado_por": "SAMIRA SARMIENTO",
+      "created_at": "2026-05-05T10:05:00.000Z"
+    }
+  ]
+}
+```
+
+#### `GET /api/lotes/trazabilidad/fecha/:fecha`
+
+Mismo resultado que el anterior pero acepta la fecha en formato `YYYY-MM-DD` y calcula el lote internamente.
+
+```
+GET /api/lotes/trazabilidad/fecha/2026-05-05
+```
+
+---
 
 ```bash
 # 1. Login

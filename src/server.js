@@ -4,13 +4,17 @@ import { connectToDB, pool } from './config/db.js'
 import { ensureUsersTable } from './services/userService.js'
 import { bootstrapAdmin } from './services/authService.js'
 import { ensurePorcionadoTable } from './services/porcionadoService.js'
+import { ensurePrefreidoTable } from './services/prefreidoService.js'
+import { ensureLotesTable } from './services/lotesService.js'
 
 const start = async () => {
   try {
     await connectToDB()
     await ensureUsersTable()
     await bootstrapAdmin()
+    await ensureLotesTable()
     await ensurePorcionadoTable()
+    await ensurePrefreidoTable()
 
     const server = app.listen(env.port, () => {
       console.log(`🚀 Server running on http://localhost:${env.port}`)

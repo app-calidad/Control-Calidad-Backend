@@ -1,5 +1,7 @@
 import { query } from '../config/db.js'
 import { ApiError } from '../utils/ApiError.js'
+import { calcularLote } from '../utils/loteUtils.js'
+import { getOrCreateLote } from './lotesService.js'
 
 // ─── Opciones predefinidas para los dropdowns del frontend ──────────────────
 
@@ -19,39 +21,6 @@ export const OPCIONES = {
   brix:       range(28, 32, 0.5),        // 28, 28.5, … 32
   cuartos:    [1, 2, 3, 4, 5, 6],
   responsables: ['EMIRO CEBALLOS', 'SAMIRA SARMIENTO'],
-}
-
-// ─── Semana ISO (calendario juliano semana-año) ──────────────────────────────
-
-export function calcularLote(fechaStr) {
-  // fechaStr: 'YYYY-MM-DD'
-  const date = new Date(`${fechaStr}T12:00:00Z`)
-  const jan4 = new Date(Date.UTC(date.getUTCFullYear(), 0, 4))
-  const startOfWeek1 = new Date(jan4)
-  startOfWeek1.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7))
-  const diff = date - startOfWeek1
-  let week = Math.floor(diff / (7 * 86400000)) + 1
-  let year = date.getUTCFullYear()
-
-  if (week < 1) {
-    year -= 1
-    const dec28Prev = new Date(Date.UTC(year, 11, 28))
-    const jan4Prev = new Date(Date.UTC(year, 0, 4))
-    const startPrev = new Date(jan4Prev)
-    startPrev.setUTCDate(jan4Prev.getUTCDate() - ((jan4Prev.getUTCDay() + 6) % 7))
-    week = Math.floor((dec28Prev - startPrev) / (7 * 86400000)) + 1
-  }
-
-  const dec28 = new Date(Date.UTC(date.getUTCFullYear(), 11, 28))
-  const jan4Next = new Date(Date.UTC(date.getUTCFullYear() + 1, 0, 4))
-  const startNext = new Date(jan4Next)
-  startNext.setUTCDate(jan4Next.getUTCDate() - ((jan4Next.getUTCDay() + 6) % 7))
-  if (date >= startNext) {
-    week = 1
-    year = date.getUTCFullYear() + 1
-  }
-
-  return `${week}-${year}`
 }
 
 // ─── Estado automático según rangos ─────────────────────────────────────────
@@ -148,6 +117,8 @@ export const crearRegistro = async (data) => {
     fecha, hora_inicio, hora_fin = null,
     cuarto,
     realizado_por, verificado_por,
+    realizado_por_id  = null,
+    verificado_por_id = null,
     observaciones = null,
   } = data
 
@@ -157,13 +128,15 @@ export const crearRegistro = async (data) => {
   if (!realizado_por)  throw ApiError.badRequest('El campo realizado_por es obligatorio')
   if (!verificado_por) throw ApiError.badRequest('El campo verificado_por es obligatorio')
 
-  const lote   = calcularLote(fecha)
-  const estado = calcularEstado(data)
+  const loteRecord = await getOrCreateLote(fecha, realizado_por_id)
+  const lote        = loteRecord.lote
+  const lote_id     = loteRecord.id
+  const estado      = calcularEstado(data)
 
   const measurements = MEASUREMENT_FIELDS.map((f) => data[f] ?? null)
 
-  const cols   = ['fecha', 'lote', 'hora_inicio', 'hora_fin', 'cuarto', ...MEASUREMENT_FIELDS, 'estado', 'realizado_por', 'verificado_por', 'observaciones']
-  const values = [fecha, lote, hora_inicio, hora_fin, cuarto, ...measurements, estado, realizado_por, verificado_por, observaciones]
+  const cols   = ['fecha', 'lote', 'lote_id', 'hora_inicio', 'hora_fin', 'cuarto', ...MEASUREMENT_FIELDS, 'estado', 'realizado_por', 'realizado_por_id', 'verificado_por', 'verificado_por_id', 'observaciones']
+  const values = [fecha, lote, lote_id, hora_inicio, hora_fin, cuarto, ...measurements, estado, realizado_por, realizado_por_id, verificado_por, verificado_por_id, observaciones]
   const placeholders = values.map((_, i) => `$${i + 1}`).join(', ')
 
   const { rows } = await query(
