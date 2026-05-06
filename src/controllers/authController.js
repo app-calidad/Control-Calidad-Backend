@@ -1,6 +1,7 @@
 import * as authService from '../services/authService.js'
+import * as userService from '../services/userService.js'
 import { ApiError } from '../utils/ApiError.js'
-import { isNonEmptyString } from '../utils/validators.js'
+import { isNonEmptyString, validateUserPayload } from '../utils/validators.js'
 
 export const login = async (req, res) => {
   const { username, password } = req.body || {}
@@ -21,3 +22,12 @@ export const login = async (req, res) => {
     username: session.username,
   })
 }
+
+export const register = async (req, res) => {
+  const { errors, data } = validateUserPayload(req.body || {})
+  if (errors.length) throw ApiError.badRequest('Validation failed', errors)
+
+  const user = await userService.createUser(data)
+  res.status(201).json({ message: 'Account created successfully', data: user })
+}
+

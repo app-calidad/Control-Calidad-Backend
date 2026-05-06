@@ -1,7 +1,9 @@
+import bcrypt from 'bcrypt'
 import { query } from '../config/db.js'
 import { ApiError } from '../utils/ApiError.js'
 
 const BASE_SELECT = 'SELECT id, username, email, created_at FROM users'
+const SALT_ROUNDS = 10
 
 export const ensureUsersTable = async () => {
   await query(`
@@ -9,8 +11,13 @@ export const ensureUsersTable = async () => {
       id SERIAL PRIMARY KEY,
       username VARCHAR(100) NOT NULL,
       email VARCHAR(255) NOT NULL UNIQUE,
+      password_hash VARCHAR(255) NOT NULL DEFAULT '',
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
+  `)
+  // Agrega la columna si la tabla ya existía sin ella
+  await query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) NOT NULL DEFAULT ''
   `)
 }
 
@@ -29,15 +36,25 @@ const findByEmail = async (email) => {
   return rows[0] || null
 }
 
-export const createUser = async ({ username, email }) => {
+export const findByUsername = async (username) => {
+  const { rows } = await query(
+    'SELECT id, username, email, password_hash, created_at FROM users WHERE username = $1 LIMIT 1',
+    [username],
+  )
+  return rows[0] || null
+}
+
+export const createUser = async ({ username, email, password }) => {
   const existing = await findByEmail(email)
   if (existing) throw ApiError.conflict('A user with that email already exists')
 
+  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS)
+
   const { rows } = await query(
-    `INSERT INTO users (username, email)
-     VALUES ($1, $2)
+    `INSERT INTO users (username, email, password_hash)
+     VALUES ($1, $2, $3)
      RETURNING id, username, email, created_at`,
-    [username, email],
+    [username, email, passwordHash],
   )
   return rows[0]
 }

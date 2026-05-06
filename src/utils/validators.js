@@ -33,6 +33,16 @@ export const validateUserPayload = (payload, { partial = false } = {}) => {
     }
   }
 
+  if (!partial || payload.password !== undefined) {
+    if (!isNonEmptyString(payload.password)) {
+      errors.push('password is required and must be a non-empty string')
+    } else if (payload.password.length < 6) {
+      errors.push('password must be at least 6 characters')
+    } else {
+      data.password = payload.password
+    }
+  }
+
   return { errors, data }
 }
 

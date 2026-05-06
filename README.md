@@ -133,9 +133,11 @@ On startup you should see:
 
 ## Authentication
 
-- Admin credentials are bootstrapped on startup. The password is hashed with `bcrypt` and held in memory only.
-- Login returns a Bearer token (random 32-byte hex) with an expiration timestamp.
-- Send it on every protected request via `Authorization: Bearer <token>` (or the `x-access-token` header).
+- **Admin:** Las credenciales del admin se cargan en memoria al iniciar el servidor (hasheadas con `bcrypt`). El admin no está en la tabla `users`.
+- **Usuarios de base de datos:** Los usuarios creados via `POST /api/auth/register` o `POST /api/users` se almacenan en PostgreSQL con su contraseña hasheada. También pueden iniciar sesión con `/api/auth/login`.
+- El login verifica primero si el `username` coincide con el admin; si no, busca en la tabla `users`.
+- Login devuelve un Bearer token (hex aleatorio de 32 bytes) con timestamp de expiración.
+- Enviar en cada petición protegida: `Authorization: Bearer <token>` (o header `x-access-token`).
 
 ## API Reference
 
@@ -156,6 +158,8 @@ Response `200`:
 ### Auth
 
 #### `POST /api/auth/login`
+
+Funciona tanto para el **admin** como para cualquier **usuario registrado en la base de datos**.
 
 Request:
 
@@ -178,6 +182,36 @@ Response `200`:
 ```
 
 Errors: `400` (missing fields), `401` (invalid credentials).
+
+#### `POST /api/auth/register`
+
+Crea un usuario en la base de datos con contraseña hasheada. El usuario podrá iniciar sesión via `/api/auth/login`.
+
+Request:
+
+```json
+{
+  "username": "alice",
+  "email": "alice@example.com",
+  "password": "secreto123"
+}
+```
+
+Response `201`:
+
+```json
+{
+  "message": "Account created successfully",
+  "data": {
+    "id": 2,
+    "username": "alice",
+    "email": "alice@example.com",
+    "created_at": "2026-05-06T10:00:00.000Z"
+  }
+}
+```
+
+Errors: `400` (validación — username, email o password inválidos; password mínimo 6 caracteres), `409` (email duplicado).
 
 ### Users (all require `Authorization: Bearer <token>`)
 
@@ -204,12 +238,15 @@ Response `200` / `404`.
 
 #### `POST /api/users`
 
+Requiere `Authorization: Bearer <token>`. Crea un usuario en la base de datos con contraseña hasheada.
+
 Request:
 
 ```json
 {
   "username": "alice",
-  "email": "alice@example.com"
+  "email": "alice@example.com",
+  "password": "secreto123"
 }
 ```
 
@@ -226,7 +263,7 @@ Response `201`:
 }
 ```
 
-Errors: `400` (validation), `409` (duplicate email).
+Errors: `400` (validation — password mínimo 6 caracteres), `409` (duplicate email).
 
 #### `PUT /api/users/:id`
 
